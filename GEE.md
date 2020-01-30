@@ -5,7 +5,7 @@ description: Explanation of GEE codes for a final project in Geoscripting course
 date_published: 2020-01-31
 ---
 
-[Open In Code Editor](https://code.earthengine.google.com/5adfefccc22add575841bce5163fcce7)
+[Open In Code Editor here](https://code.earthengine.google.com/?scriptPath=users%2Fiiiamdone%2Ftest1%3Afinal_project_geoscripting)
 This final project will utilize random forest to predict land cover change on Lagos, Nigeria.
 
 ## Instructions
@@ -52,106 +52,99 @@ var table = ee.FeatureCollection("users/iiiamdone/lagos");
 
 #### cloud masking 
 ```js
-var maskL8 = function(image) {
-  var qa = image.select('BQA');
-  /// Check that the cloud bit is off.
-  // See https://landsat.usgs.gov/collectionqualityband
-  var mask = qa.bitwiseAnd(1 << 4).eq(0);
+var maskL8sr = function(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
   return image.updateMask(mask);
+}
+
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
 };
+
 ```
 #### filter by dates and regions of interest (roi)
 ```js
-var dataset2013 = l8 
-                  .filterDate('2013-01-01', '2013-12-31')
-                  .filterBounds(roi)
-                  .map(maskL8)
+var dataset2018 = l8 
+                  .filterDate('2018-01-01', '2018-12-31')
+                  .filterBounds(table)
+                  .map(maskL8sr)
                   .median();
-```
-####  clip to predefined boundaries 
-```js
-var La2013 = ee.Image(dataset2013).clip(table) 
-```
-The result (`dataset2013`) is an `ImageCollection` that lists all of the images sensing over the study area in that specific time period. The  `median`  filter serves as a reducer here, to compute the mean value for each pixel. At each location in the output image, in each band, the pixel value is the median of all unmasked pixels in the input imagery (the images in the collection). From that, the result (`La2013`) only contains one image at large.
 
-####  visualize the image
-```js
-Map.addLayer(La2013, {bands:['B4', 'B3', 'B2',], min: 0, max: 0.3}, 'Lagos2013',false);
+var dataset2000 = l7 
+                  .filterDate('2000-01-01', '2000-12-31')
+                  .filterBounds(table)
+                  .map(cloudMaskL457)
+                  .median();
 
 ```
+The results (`dataset2018` and`dataset2000` ) came from  `ImageCollection` objects that lists all of the images sensing over the study area in that specific time period. The  `median`  filter serves as a reducer here, to compute the mean value for each pixel. At each location in the output image, in each band, the pixel value is the median of all unmasked pixels in the input imagery (the images in the collection). From that, the result (`La2013`) only contains one image at large.
+
+####  clip to predefined boundaries and visualize the images
+```js
+var La2018 = ee.Image(dataset2018).clip(table) 
+Map.addLayer(La2018, {bands:['B4', 'B3', 'B2',], min: 0, max: 3000}, 'Lagos2018',false);
+var La2000 = ee.Image(dataset2000).clip(table) 
+Map.addLayer(La2000, {bands:['B3', 'B2', 'B1',], min: 0, max: 3000}, 'Lagos2000',false);
+```
+
 
 ### 4. collecting training data 
-by select points on the image based on expert knowledge, and high-resolution satellite layers in GEE.
+By select points on the image based on expert knowledge, and high-resolution satellite layers in GEE. These training data were collected and exported as GEE assets (`FeatureCollection` objects)in order to increaes more reproducibility, therefore we re-import the traningpoints as codes shown as: 
 ```js
-// just a few examples here 
- water = 
-    /* color: #bf04c2 */
-    /* shown: false */
-    ee.FeatureCollection(
-        [ee.Feature(
-            ee.Geometry.Point([3.107970051862594, 6.482713584807883]),
-            {
-              "landcover": 0,
-              "system:index": "0"
-            }),
-residential = ee.FeatureCollection(
-        [ee.Feature(
-            ee.Geometry.Point([3.2343770058245127, 6.734572657797003]),
-            {
-              "landcover": 1,
-              "system:index": "0"
-            }),
-            
- industrial = 
-  ee.FeatureCollection(
-        [ee.Feature(
-            ee.Geometry.Point([3.246948001111832, 6.602872661270299]),
-            {
-              "landcover": 4,
-              "system:index": "0"
-            }),
-// COLLECT training data 
-var newfc = residential.merge(vegetation).merge(water).merge(industrial)
-print(newfc)
+// load training points. the numberic property 'landcover' stores know labels
+// here, the training data is collected from previous studies
+var pnts = ee.FeatureCollection("users/iiiamdone/trainingpnts");
+
 ```
 
 ### 5. Train random forest model 
+Here only contain RF model for predicting 2018, others are in the [code](https://code.earthengine.google.com/?scriptPath=users%2Fiiiamdone%2Ftest1%3Afinal_project_geoscripting)
+
 ```js
+// overlay points on imagery to get training
+var training = La2018.select(bands8).sampleRegions({
+  collection : pnts,
+  properties : ['landcover'],
+  scale : 30,
+  tileScale : 8,
+})
 
-// method 2
-// split the training data into e.g. 80% for training and 20 % for testing
-// add a new random column to features(collection)
-// FYI https://code.earthengine.google.com/c8c2701a804d9f025a73e94d2cad63c6
-var training2 = objectPropertiesImage
-                // .updateMask(seeds)
-                .sampleRegions({
-                          collection: newfc,  // features collected/defined by predefined points 
-                                            // Get the sample from the polygons FeatureCollection.
-                          properties: ['landcover'], // Keep this list of properties from the polygons.
-                          scale: 30, // Set the scale to get Landsat pixels in the polygons.
-                          tileScale : 8,
-});
-print(training2)
-
-var withRandom = training2.randomColumn('random');
-var split = 0.6;
+// // divide training and test sets 
+var withRandom = training.randomColumn('random');
+var split = 0.7;
 var trainingFC = withRandom.filter(ee.Filter.lt('random', split));
 var testingFC = withRandom.filter(ee.Filter.gte('random', split));
 
-var TrainedClassifier = ee.Classifier.randomForest(100).train( // constructure a predictor
-    {
-      features : trainingFC, 
-      classProperty : 'landcover',
-      inputProperties : bands, 
-      // gamma : 0.5,
-    });
-var testLC =  testingFC.classify(TrainedClassifier);   
-var trainAccuracy2 = TrainedClassifier.confusionMatrix()
+// traing a random forest classifier with some default parameters
+var modelRF = ee.Classifier.randomForest(100).train({
+  features: trainingFC, 
+  classProperty : 'landcover', // The name of the property containing the class value
+  inputProperties : bands8,
+})
 
-var confusionMatrix = testLC.errorMatrix('landcover','classification')    
-print("Train Accuracy,", trainAccuracy2)
-print("resubstitution error Matrix",trainAccuracy2)
-print('training overall accuracy: ', trainAccuracy2.accuracy());
+// Classify the image with the same bands used for training. (predict)
+var test = testingFC.classify(modelRF)
+var Classified = La2018.select(bands8).classify(modelRF);
+
+// get a confusion matrix represetning resubstitution accuracy
+var trainingAccuracy = modelRF.confusionMatrix();
+print("resubstitution error Matrix",trainingAccuracy)
+print('training overall accuracy: ', trainingAccuracy.accuracy()); 
 
 ```
 
@@ -159,17 +152,22 @@ print('training overall accuracy: ', trainAccuracy2.accuracy());
 
 ```js
 
-// Visualization brushes 
-var palette =['0000FF', 'ffa500','000000','FFFF00','00FF00'];
+// visualization 
+var igbpPalette = [
+  '000000', // water
+  'aea1d6', // wetlands
+  'ff0000', // agriculture
+  '00ff00', // forest
+  'c6da8a', // grassland 
+  '86da9c', // shrub
+  'FF0000', // urban
+  'da6807', // barren
+];
 
-// 0000FF is water is blue
-// ffa500 is cropland with vegetation is orange
-// 00000 is urban is black
-// ffff00 is bare land is yellow
-// 00ff00 is natural vegetation is green
+Map.addLayer(training, {min:0, max:10,palette: igbpPalette}, 'tranining clusters ', false)
+Map.addLayer(Classified, {min:0, max:254,palette: igbpPalette}, 'predicted 2018')
+Map.addLayer(predicted,  {min:0, max:254,palette: igbpPalette}, 'predicted 2000')
 
-Map.addLayer(training, {min:0, max:0.02,palette: paletter}, 'tranining clusters ', false)
-Map.addLayer(classified, {min:0, max:254,palette: paletter}, 'Classified objects')
 
 ```
 
