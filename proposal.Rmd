@@ -1,0 +1,144 @@
+---
+title: "proposal_final versition"
+runtime: shiny
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This R Markdown document is made interactive using Shiny. Unlike the more traditional workflow of creating static reports, you can now create documents that allow your readers to change the assumptions underlying your analysis and see the results immediately. 
+
+To learn more, see [Interactive Documents](http://rmarkdown.rstudio.com/authoring_shiny.html).
+
+## Inputs and Outputs
+
+You can embed Shiny inputs and outputs in your document. Outputs are automatically updated whenever inputs change.  This demonstrates how a standard R plot can be made interactive by wrapping it in the Shiny `renderPlot` function. The `selectInput` and `sliderInput` functions create the input widgets used to drive the plot.
+
+```{r eruptions, echo=FALSE}
+inputPanel(
+  selectInput("n_breaks", label = "Number of bins:",
+              choices = c(10, 20, 35, 50), selected = 20),
+  
+  sliderInput("bw_adjust", label = "Bandwidth adjustment:",
+              min = 0.2, max = 2, value = 1, step = 0.2)
+)
+
+renderPlot({
+  hist(faithful$eruptions, probability = TRUE, breaks = as.numeric(input$n_breaks),
+       xlab = "Duration (minutes)", main = "Geyser eruption duration")
+  
+  dens <- density(faithful$eruptions, adjust = input$bw_adjust)
+  lines(dens, col = "blue")
+})
+```
+
+## Embedded Application
+
+It's also possible to embed an entire Shiny application within an R Markdown document using the `shinyAppDir` function. This example embeds a Shiny application located in another directory:
+
+```{r tabsets, echo=FALSE}
+shinyAppDir(
+  system.file("examples/06_tabsets", package = "shiny"),
+  options = list(
+    width = "100%", height = 550
+  )
+)
+```
+
+Note the use of the `height` parameter to determine how much vertical space the embedded application should occupy.
+
+You can also use the `shinyApp` function to define an application inline rather then in an external directory.
+
+In all of R code chunks above the `echo = FALSE` attribute is used. This is to prevent the R code within the chunk from rendering in the document alongside the Shiny components.
+
+# methodology 
+##  study area 
+
+## data
+Satellite images are collected acquired from the Google Earth Engine platform. From that few preprocessing steps would be computed. We can define regions of interest (ROI) and specify dates to filter images. By inserting the bounding boxs for each city that downloaded from GADM website, we can restrict satellite images more precisely. afterwards, cloud and cloud shadow were masked out after evaluating the BQA bands for both Landsat 5 and 8 sensors. 
+one thing need to pay attention to is different radiometric resolution. in order to keep two satellite images consisent while reduce processing memory and download speed, Landsat 5 images would be rescaled to unsigned 16 bit before exporting. 
+however, validation data for landcover classification for these three cities are not fully available as expected. some literature have pointed that land surveying in African regions are still very original, which requires more inputs from the future. Below table provided a further explanation. 
+---
+title : "reprojection to different study areas"
+Addis Ababa : EPSG:20138
+Dar es Salaam : EPSG:4210
+Lagos : EPSG:26391
+---
+## process work flow 
+In order to reduce processing time, and to assign more flexibility and reproducible, this study would shift a little bit from the original proposal. 
+Processing time in eCognition platform is too intensive, and land cover classification is the most intensive part inside this master study.Therefore, this study used R and eCognition for this purpose.
+This study performed two levels of land cover classification for Lagos, and other study areas, in order to differentiate land cover types, i.e. water, wetland, agriculture, forest, grassland, shrub and urban areas. 
+
+### land cover classification scheme
+before the classfiction scheme, it is often necessary to clearify definition of green spaces. in this study green space refers all the vegetation on the landscape, inlcude grassland, shrubland, forest and other sparsely distributed vegetation. the reason for this is due to the coarse resolution of landsat images that makes it hard to clear discriminate different vegetation types. 
+
+A hierarchical classification is often recommended in similar studies, for its relative applicability and suitable to be adapted in different situations (Source).the classification scheme would be defined as:
+---
+
+---
+### random forest classification 
+Thesis proposal of this study describe benefits of using object-based methods for landcover classification. For instance, spectal, spatial, and textual features can attache to each different objects. However, in practical, we found that objects 
+
+therefore, this study decides to combine different tactics and to slightly change the methodolog. after extracting objects from eCognition, we exported them into R.
+Compared to the previous thesis proposal, the final report would use random forest classifier for classificaiton. This is due to the considertaion upon whether created object sizes can fully depict the landscape.
+
+the spatial resolution of 30 meters images have deprived such advantages. There are around 5000 pixels in average inside each object if a scale parameters of 72 were used to create objects. If one pixel measures 30 meters on the ground, one object created from the 30-meter spatial resolution would probably covered an area of 150000 square meters, while
+
+
+### training and reference data 
+supervised classification requires training data to buildup their models. This study would select training data of two types: (1) point training data by visual interpretation from Google Earth; (2) image objects (polygons) within which contained object-related statistics. 
+
+For each RF models that computed from these two methods, reference data sets would be split up into training data sets and test sets. Around 70% of reference data would be used as training data and the rest 30% would be used for testing. The split percentage is used to ensure sufficient data for training and testing.
+
+Point training data were directly come from visual interpretation with Google earth high-resolution images. Satellite layer on the GEE platform allowed relatively clear representation of the landscape. For instance, it is easier to distinguish water bodies, buildup areas, barren land from other land cover classes. Training data collected can capture pixel values for that particular loctions, and be stored into "FeatureCollection" on the GEE platform, which can be exported and downloaded afterwards. Overall, training points for each land cover classes should be around the same and fairly distributed over the whole scene. 
+
+Collect training points from Open foris collect earth, for each points that have 1-heater plot areas and 7 * 7 sample points.
+
+Polygon training data were mainly come from OBIA-based processing, mainly based on the  eCognition platform. eCogntion is developed by Trimble and provides many powerful tools and algorithms for both image classification and machine learning. Apart from all these sophisticated tools, OBIA on eCogntion depends heavily on prior knowledge on the landscape, and sometimes these knowledge is too time-consuming to achieve. Therefore, the purpose and objectives is to create segments from images, and to attach features as much as possible. This study used multi-resolution (MRS) algorithms for segmentation, as MRS is the most commonly-used tool in this domain. Compare to other segmentation skills (e.g. chessboard segmentation, spectral difference) it is more suitable to apply considering the spatial resolution of Landsat imageries.
+image segmentation requires few important parameters as inputs. The parameters used in this study were: scale parameter of 72, shape heterogeneity of 0.2, color heterogeneity as 0.8, and compactness and -ness as 0.5. Scale parameter were decided by trail and error tests, which started from scale of 10, and ended up at 100, with a stepwise growth of 10. From that resulting image objects would be reviewed and the most optimal scale parameter should produce segments that avoid over or under segmentation.
+
+Object Size: Use an object size of one to generate pixel-sized image objects. The effect is that for each pixel you can investigate all information available from features
+The scale size should depends on features related to real geometry on the ground. By examining within google earth, we can see that a region covered with vegetation has a width of around 1500 meters,abd for regions represent buildup areas, the size is around 2700 meters. therefore objecs created to represent these ares should contain around 50 and 90 pixels. 
+
+Throughout the practical, eCogntion exerted many inconvenience as coarse image resolution, to maintain more reproducbility, the process to create objects would be computed on google earth engine. using a super non-iterative clustering methods (SNIC). therefore the methodology has to change. 
+
+The first step is to define seed pixels (centroids for each cluster) by defining spacing between seed pixels within the image. the second step it to growing from seed pixels into clusters. Using a snic command in GEE, it takes into account few parameters, such as scale (size) of each cluster, compactness and connectivity, neighbourhoodsize. Size parameter, similar to scale factor that mentioned in many OBIA related papers, aims to restrict the size of created objects or subsets. In GEE, the size is represented in terms of the spacing and distance between neighbouring objects. Larger spacing indicated that the far distance between seeds (centroids) and thererfore the size of objects would be larger. smaller size vice versa. compactness factors decide the clusters to be more compact (similar to square). this parameter here measures both spaital and spsectral distance between neighrbouring 4 or 8 candidate pixels with then seed pixel, before deciding whether candidates should be include in this cluster. the equation to compute this ditsnce is given by:..... (Achanta's paper).
+
+after snic segmentation, output is image collection, containing a band of cluster ID (name "clusters"), and per-cluster average values for each input bands (['B1_mean','B2_mean',..., 'B11_mean').  
+
+with larger scale, the images would be cut into larger objects that might be convoluted other land cover classes.this iss termed by under-segmentation. On the contrary, over segmentation refers to using a smaller segmentation scale that producing many fragmented images objects. during the trail and error test, it can be seen from the images that scale smaller than 10 and larger than 100 would cause either over- or under-segmentation. therefore the optimal scale is expected to within the range of 20 to 100. from that we test using a step growth of 5 and evaluate the images and created objects. in the end, scale of 72 can produce more appropriate objects from the image. Important edges such as bridge, roads can be presserved, while images were not too noisy and contain too many small objects. this study also setup weights for each layer: 1 for visible bands (R,G,B,NIR) and 0 for other bands. 
+---
+title:scale parameter for different study area
+dar es salaam: scale of 200
+addis ababa
+---
+overall, there area 3168 objects have been created after segmentation. For 
+
+afterwards, these objects with different features attached would be exported, as shapefile format from eCognition. The reason to export results in vector data is because they can contain more information, such as classification results. 
+
+then objects would be imported into R and do some preprocessing, such as reprojection, and convert vector datatypes.
+
+### accuracy assessment 
+
+
+
+
+
+
+
+
+selection of training data would follow a pre-classification on land cover as well
+-- a table here---
+
+the reason to choose sampling points instead of sampling polygon is out of the consideration of spatial resolution. If we collect polygons into sampling units, there might be more than one land cover class attached to each sample polygons, in that case the classification quality would be compromised. 
+
+
+## discussion point
+1. city extent data of Addis Ababa, extracted from GADM databse, is not match with GEE map layer or google maps. but training data keep aligned with the GADM boundaries
+2. city extent data of Dar es Salaam, extracted from GADM databse, contains state level, not city.
+
+
+ 
+
